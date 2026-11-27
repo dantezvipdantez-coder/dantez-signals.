@@ -8,7 +8,7 @@ from datetime import datetime, timezone, timedelta
 
 import requests
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -24,6 +24,7 @@ logging.basicConfig(
 )
 
 TOKEN = os.getenv("BOT_TOKEN")
+WEBAPP_URL = os.getenv("WEBAPP_URL")
 API = "https://biquote.io/api"
 
 MARKETS = {
@@ -83,7 +84,20 @@ def timeframe_keyboard():
 
 
 def main_menu_keyboard():
-    return keyboard(list(MARKETS.items()), "market")
+    buttons = [
+        [InlineKeyboardButton(name, callback_data=f"market:{key}")]
+        for key, name in MARKETS.items()
+    ]
+
+    if WEBAPP_URL and WEBAPP_URL.startswith("https://"):
+        buttons.append([
+            InlineKeyboardButton(
+                "Открыть DANTEZ Mini App",
+                web_app=WebAppInfo(url=WEBAPP_URL),
+            )
+        ])
+
+    return InlineKeyboardMarkup(buttons)
 
 
 def action_keyboard():
