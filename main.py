@@ -84,9 +84,13 @@ def timeframe_keyboard():
 
 
 def main_menu_keyboard():
-    buttons = [
-        [InlineKeyboardButton(name, callback_data=f"market:{key}")]
+    market_buttons = [
+        InlineKeyboardButton(name, callback_data=f"market:{key}")
         for key, name in MARKETS.items()
+    ]
+    buttons = [
+        market_buttons[index:index + 2]
+        for index in range(0, len(market_buttons), 2)
     ]
 
     if WEBAPP_URL and WEBAPP_URL.startswith("https://"):
