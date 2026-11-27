@@ -1,3 +1,4 @@
+
 import os
 import logging
 
@@ -6,7 +7,9 @@ from telegram.ext import (
     Application,
     CommandHandler,
     CallbackQueryHandler,
+    MessageHandler,
     ContextTypes,
+    filters,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -30,12 +33,19 @@ ASSETS = {
                "SOL/USDT", "XRP/USDT"],
 }
 
-def keyboard(items, prefix):
+def make_keyboard(items, prefix):
     buttons = [
-        [InlineKeyboardButton(item, callback_data=f"{prefix}:{key}")]
-        for key, item in items
+        [InlineKeyboardButton(name, callback_data=f"{prefix}:{key}")]
+        for key, name in items
     ]
     return InlineKeyboardMarkup(buttons)
+
+
+def timeframe_keyboard():
+    return make_keyboard(
+        [(x, x) for x in ["M1", "M5", "M15"]],
+        "time"
+    )
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -43,7 +53,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         "DANTEZ SIGNALS\n\nВыбери рынок:",
-        reply_markup=keyboard(list(MARKETS.items()), "market")
+        reply_markup=make_keyboard(list(MARKETS.items()), "market")
     )
 
 
@@ -51,50 +61,50 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    data = query.data.split(":", 1)
-    action, value = data[0], data[1]
+    action, value = query.data.split(":", 1)
 
     if action == "market":
+        context.user_data["market_key"] = value
         context.user_data["market"] = MARKETS[value]
 
-        if value in ASSETS:
-            items = [(str(i), asset)
-                     for i, asset in enumerate(ASSETS[value])]
-            await query.edit_message_text(
-                f"Рынок: {MARKETS[value]}\n\nВыбери актив:",
-                reply_markup=keyboard(items, "asset")
-            )
-        else:
-            await query.edit_message_text(
-                f"Выбран {MARKETS[value]}.\n\n"
-                "Список доступных инструментов нужно сверить "
-                "с платформой Binomo перед подключением сигналов.",
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("Назад", callback_data="back")
-                ]])
-            )
+        assets = ASSETS.get(value, [])
+
+        items = [(str(i), asset) for i, asset in enumerate(assets)]
+        items.append(("custom", "Ввести свой актив"))
+
+        await query.edit_message_text(
+            f"Рынок: {MARKETS[value]}\n\nВыбери актив:",
+            reply_markup=make_keyboard(items, "asset")
+        )
 
     elif action == "asset":
-        market = context.user_data.get("market", "")
-        context.user_data["asset"] = ASSETS[
-            next(k for k, v in MARKETS.items() if v == market)
-        ][int(value)]
+        if value == "custom":
+            context.user_data["awaiting_asset"] = True
+            await query.edit_message_text(
+                "Напиши название актива или валютную пару.\n\n"
+                "Например: EUR/USD, GBP/JPY, BTC/USDT."
+            )
+            return
 
-        items = [(x, x) for x in ["M1", "M5", "M15"]]
+        market_key = context.user_data["market_key"]
+        context.user_data["asset"] = ASSETS[market_key][int(value)]
+
         await query.edit_message_text(
-            f"Актив: {context.user_data['asset']}\n\n"
-            "Выбери таймфрейм:",
-            reply_markup=keyboard(items, "time")
+            f"Актив: {context.user_data['asset']}\n\nВыбери таймфрейм:",
+            reply_markup=timeframe_keyboard()
         )
 
     elif action == "time":
         context.user_data["timeframe"] = value
 
-        items = [(x, x) for x in ["1 минута", "2 минуты",
-                                  "3 минуты", "5 минут"]]
+        items = [
+            (x, x) for x in
+            ["1 минута", "2 минуты", "3 минуты", "5 минут"]
+        ]
+
         await query.edit_message_text(
-            f"Таймфрейм: {value}\n\nВыбери срок экспирации:",
-            reply_markup=keyboard(items, "expiry")
+            "Выбери срок экспирации:",
+            reply_markup=make_keyboard(items, "expiry")
         )
 
     elif action == "expiry":
@@ -106,23 +116,45 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Актив: {context.user_data['asset']}\n"
             f"Таймфрейм: {context.user_data['timeframe']}\n"
             f"Экспирация: {value}\n\n"
-            "Анализ рынка и реальные сигналы пока не подключены.",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("Новий выбор", callback_data="back")
-            ]])
+            "Реальный анализ пока не подключён.",
+            reply_markup=make_keyboard(
+                [("back", "Выбрать другой актив")],
+                "nav"
+            )
         )
 
-    elif action == "back":
+    elif action == "nav" and value == "back":
         await query.edit_message_text(
-            "DANTEZ SIGNALS\n\nВыбери рынок:",
-            reply_markup=keyboard(list(MARKETS.items()), "market")
+            "Выбери рынок:",
+            reply_markup=make_keyboard(list(MARKETS.items()), "market")
         )
+
+
+async def custom_asset(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.user_data.get("awaiting_asset"):
+        return
+
+    asset = update.message.text.strip().upper()
+
+    if len(asset) < 2 or len(asset) > 30:
+        await update.message.reply_text(
+            "Название должно содержать от 2 до 30 символов. Попробуй ещё раз."
+        )
+        return
+
+    context.user_data["asset"] = asset
+    context.user_data["awaiting_asset"] = False
+
+    await update.message.reply_text(
+        f"Выбран актив: {asset}\n\nВыбери таймфрейм:",
+        reply_markup=timeframe_keyboard()
+    )
 
 
 async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     await update.message.reply_text(
-        "Текущий выбор сброшен. Для нового выбора отправь /start."
+        "Выбор сброшен. Для нового выбора отправь /start."
     )
 
 
@@ -144,6 +176,9 @@ def main():
     app.add_handler(CommandHandler("stop", stop))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CallbackQueryHandler(menu))
+    app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, custom_asset)
+    )
 
     print("DANTEZ SIGNALS запущен")
     app.run_polling()
@@ -151,4 +186,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-        
+                          
