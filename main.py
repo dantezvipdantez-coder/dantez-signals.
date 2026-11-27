@@ -63,17 +63,16 @@ EXPIRIES = [
 ]
 
 
-def keyboard(items, prefix):
+def keyboard(items, prefix, columns=2):
     buttons = [
-        [
-            InlineKeyboardButton(
-                name,
-                callback_data=f"{prefix}:{key}",
-            )
-        ]
+        InlineKeyboardButton(name, callback_data=f"{prefix}:{key}")
         for key, name in items
     ]
-    return InlineKeyboardMarkup(buttons)
+    rows = [
+        buttons[index:index + columns]
+        for index in range(0, len(buttons), columns)
+    ]
+    return InlineKeyboardMarkup(rows)
 
 
 def timeframe_keyboard():
@@ -373,7 +372,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
 
     await update.message.reply_text(
-        "DANTEZ SIGNALS\n\nВыбери рынок:",
+        "◆ DANTEZ SIGNALS ◆\n"
+        "PREMIUM MARKET TERMINAL\n\n"
+        "Выбери торговый рынок:",
         reply_markup=main_menu_keyboard(),
     )
 
@@ -402,7 +403,9 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             items.append(("custom", "Ввести свой актив"))
 
             await query.edit_message_text(
-                f"Рынок: {MARKETS[value]}\n\nВыбери актив:",
+                "◆ DANTEZ SIGNALS ◆\n"
+                f"РЫНОК: {MARKETS[value].upper()}\n\n"
+                "Выбери инструмент для анализа:",
                 reply_markup=keyboard(items, "asset"),
             )
 
@@ -416,8 +419,10 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 context.user_data["awaiting_asset"] = True
 
                 await query.edit_message_text(
-                    "Введи валютную пару.\n"
-                    "Например: EUR/USD или GBP/JPY."
+                    "◆ РУЧНОЙ ВЫБОР АКТИВА ◆\n\n"
+                    "Введи торговую пару в формате EUR/USD.\n"
+                    "Например: EUR/USD или GBP/JPY.\n\n"
+                    "Пока источник котировок подключён только для Forex."
                 )
                 return
 
@@ -455,7 +460,7 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data["expiry"] = value
 
             await query.edit_message_text(
-                "Настройки сохранены.\n\n"
+                "◆ ПАРАМЕТРЫ АНАЛИЗА ◆\n\n"
                 f"Рынок: {context.user_data.get('market')}\n"
                 f"Актив: {context.user_data.get('asset')}\n"
                 f"Таймфрейм: {context.user_data.get('timeframe')}\n"
@@ -554,20 +559,22 @@ async def run_analysis(source, context):
         candle_text = candle_time.strftime("%H:%M UTC")
 
         message = (
-            "DANTEZ SIGNALS\n\n"
-            f"Актив: {asset}\n"
-            "Рынок: Forex\n"
-            f"Таймфрейм: {timeframe}\n\n"
-            f"Результат: {direction}\n"
+            "◆ DANTEZ SIGNALS ◆\n"
+            "PREMIUM MARKET ANALYSIS\n\n"
+            f"АКТИВ  |  {asset}\n"
+            "РЫНОК  |  FOREX\n"
+            f"ТАЙМФРЕЙМ  |  {timeframe}\n\n"
+            f"СИГНАЛ  |  {direction}\n"
             f"{explanation}\n\n"
-            "ИНДИКАТОРЫ\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            "ТЕХНИЧЕСКИЕ ИНДИКАТОРЫ\n"
             f"EMA 9: {e9:.6f}\n"
             f"EMA 21: {e21:.6f}\n"
             f"RSI 14: {rsi:.2f}\n"
             f"MACD: {macd:.7f}\n"
             f"MACD Signal: {macd_signal:.7f}\n\n"
             f"Последняя закрытая свеча: {candle_text}\n"
-            f"Выбранная экспирация: {selected_expiry}\n\n"
+            f"ЭКСПИРАЦИЯ  |  {selected_expiry}\n\n"
             "Экспирация выбрана тобой, а не рассчитана "
             "как гарантированно подходящая.\n"
             "Результат анализа не гарантирует исход сделки."
