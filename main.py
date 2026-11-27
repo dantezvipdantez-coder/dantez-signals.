@@ -1,5 +1,7 @@
+
 import os
 import re
+import math
 import logging
 import asyncio
 from datetime import datetime, timezone, timedelta
@@ -18,7 +20,7 @@ from telegram.ext import (
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)s %(message)s",
-    level=logging.INFO
+    level=logging.INFO,
 )
 
 TOKEN = os.getenv("BOT_TOKEN")
@@ -35,15 +37,15 @@ MARKETS = {
 ASSETS = {
     "forex": [
         "EUR/USD", "GBP/USD", "USD/JPY",
-        "AUD/USD", "USD/CAD", "EUR/JPY"
+        "AUD/USD", "USD/CAD", "EUR/JPY",
     ],
     "otc": [
         "EUR/USD OTC", "GBP/USD OTC",
-        "USD/JPY OTC", "AUD/USD OTC", "EUR/JPY OTC"
+        "USD/JPY OTC", "AUD/USD OTC", "EUR/JPY OTC",
     ],
     "crypto": [
         "BTC/USDT", "ETH/USDT", "BNB/USDT",
-        "SOL/USDT", "XRP/USDT"
+        "SOL/USDT", "XRP/USDT",
     ],
 }
 
@@ -53,14 +55,22 @@ TIMEFRAMES = {
     "M15": "15m",
 }
 
-EXPIRIES = ["1 минута", "2 минуты", "3 минуты", "5 минут"]
+EXPIRIES = [
+    "1 минута",
+    "2 минуты",
+    "3 минуты",
+    "5 минут",
+]
 
 
 def keyboard(items, prefix):
     buttons = [
-        [InlineKeyboardButton(
-            name, callback_data=f"{prefix}:{key}"
-        )]
+        [
+            InlineKeyboardButton(
+                name,
+                callback_data=f"{prefix}:{key}",
+            )
+        ]
         for key, name in items
     ]
     return InlineKeyboardMarkup(buttons)
@@ -68,8 +78,8 @@ def keyboard(items, prefix):
 
 def timeframe_keyboard():
     return keyboard(
-        [(x, x) for x in TIMEFRAMES],
-        "time"
+        [(key, key) for key in TIMEFRAMES],
+        "time",
     )
 
 
@@ -78,10 +88,13 @@ def main_menu_keyboard():
 
 
 def action_keyboard():
-    return keyboard([
-        ("analyze", "Провести анализ"),
-        ("back", "Выбрать другой актив"),
-    ], "action")
+    return keyboard(
+        [
+            ("analyze", "Провести анализ"),
+            ("back", "Выбрать другой актив"),
+        ],
+        "action",
+    )
 
 
 def ema_series(values, period):
@@ -114,8 +127,8 @@ def calculate_rsi(values, period=14):
         for i in range(1, len(values))
     ]
 
-    gains = [max(x, 0) for x in changes]
-    losses = [max(-x, 0) for x in changes]
+    gains = [max(change, 0) for change in changes]
+    losses = [max(-change, 0) for change in changes]
 
     avg_gain = sum(gains[:period]) / period
     avg_loss = sum(losses[:period]) / period
@@ -137,43 +150,75 @@ def calculate_rsi(values, period=14):
 
 
 def get_market_data(asset, timeframe):
+    if timeframe not in TIMEFRAMES:
+        raise ValueError("Неизвестный таймфрейм.")
+
     symbol = asset.replace("/", "").upper()
 
-    if not re.fullmatch(r"[A-Z0-9]{6,12}", symbol):
-        raise ValueError("Некорректное название актива.")
+    if not re.fullmatch(r"[A-Z]{6}", symbol):
+        raise ValueError("Некорректное название валютной пары.")
 
     interval = TIMEFRAMES[timeframe]
-
-    headers = {"User-Agent": "DANTEZ-SIGNALS/1.0"}
+    headers = {
+        "User-Agent": "DANTEZ-SIGNALS/1.0",
+    }
 
     quote_response = requests.get(
         f"{API}/{symbol}",
         headers=headers,
-        timeout=12
+        timeout=12,
     )
     quote_response.raise_for_status()
+
     quote = quote_response.json()
+
+    if not isinstance(quote, dict):
+        raise ValueError("Неверный формат котировки.")
 
     if quote.get("stale") is True:
         raise ValueError("Котировка устарела.")
 
+    if quote.get("exchange") != "FOREX":
+        raise ValueError(
+            "API не подтвердил, что этот актив относится к Forex."
+        )
+
     if quote.get("marketState") != "open":
-        raise ValueError("Рынок закрыт или данные недоступны.")
+        raise ValueError(
+            "Рынок закрыт или данные сейчас недоступны."
+        )
 
     quote_age = quote.get("quoteAgeSeconds")
 
-    if quote_age is not None and float(quote_age) > 180:
+    if quote_age is None:
+        raise ValueError(
+            "API не предоставил возраст котировки."
+        )
+
+    try:
+        quote_age = float(quote_age)
+    except (TypeError, ValueError):
+        raise ValueError("Некорректное время котировки.")
+
+    if not math.isfinite(quote_age) or quote_age > 180 or quote_age < 0:
         raise ValueError("Последняя котировка слишком старая.")
 
     response = requests.get(
         f"{API}/{symbol}/ohlc",
-        params={"interval": interval, "limit": 300},
+        params={
+            "interval": interval,
+            "limit": 300,
+        },
         headers=headers,
-        timeout=15
+        timeout=15,
     )
     response.raise_for_status()
 
     data = response.json()
+
+    if not isinstance(data, dict):
+        raise ValueError("Неверный формат исторических данных.")
+
     bars = data.get("bars", [])
 
     if not isinstance(bars, list):
@@ -182,24 +227,35 @@ def get_market_data(asset, timeframe):
     completed = []
 
     for bar in bars:
+        if not isinstance(bar, dict):
+            continue
+
+        # Используем только полностью закрытые свечи.
         if bar.get("isOpen") is not False:
             continue
 
         try:
             close = float(bar["close"])
+
+            if not math.isfinite(close) or close <= 0:
+                continue
+
             open_time = datetime.fromisoformat(
                 bar["openTime"].replace("Z", "+00:00")
             )
+
+            if open_time.tzinfo is None:
+                continue
 
             completed.append({
                 "close": close,
                 "openTime": open_time,
             })
 
-        except (KeyError, TypeError, ValueError):
+        except (KeyError, TypeError, ValueError, AttributeError):
             continue
 
-    completed.sort(key=lambda x: x["openTime"])
+    completed.sort(key=lambda item: item["openTime"])
 
     if len(completed) < 60:
         raise ValueError(
@@ -210,7 +266,8 @@ def get_market_data(asset, timeframe):
     last_bar = completed[-1]
 
     candle_close_time = (
-        last_bar["openTime"] + timedelta(minutes=minutes)
+        last_bar["openTime"]
+        + timedelta(minutes=minutes)
     )
 
     age = (
@@ -218,18 +275,28 @@ def get_market_data(asset, timeframe):
     ).total_seconds()
 
     if age < -60 or age > minutes * 60 * 3:
-        raise ValueError("Свечи устарели. Анализ отменён.")
+        raise ValueError(
+            "Свечи устарели. Анализ отменён."
+        )
 
-    return [bar["close"] for bar in completed], last_bar
+    closes = [
+        item["close"]
+        for item in completed
+    ]
+
+    return closes, last_bar
 
 
 def analyze_market(asset, timeframe, expiry):
-    closes, last_bar = get_market_data(asset, timeframe)
+    closes, last_bar = get_market_data(
+        asset,
+        timeframe,
+    )
 
     ema9 = ema_series(closes, 9)
     ema21 = ema_series(closes, 21)
 
-    rsi = calculate_rsi(closes)
+    rsi = calculate_rsi(closes, 14)
 
     fast = ema_series(closes, 12)
     slow = ema_series(closes, 26)
@@ -243,7 +310,9 @@ def analyze_market(asset, timeframe, expiry):
     signal_values = ema_series(macd_values, 9)
 
     if not signal_values or signal_values[-1] is None:
-        raise ValueError("Недостаточно данных для MACD.")
+        raise ValueError(
+            "Недостаточно данных для расчёта MACD."
+        )
 
     macd = macd_values[-1]
     macd_signal = signal_values[-1]
@@ -253,7 +322,9 @@ def analyze_market(asset, timeframe, expiry):
     e21 = ema21[-1]
 
     if rsi is None or e9 is None or e21 is None:
-        raise ValueError("Не удалось рассчитать индикаторы.")
+        raise ValueError(
+            "Не удалось рассчитать индикаторы."
+        )
 
     up = (
         e9 > e21
@@ -271,13 +342,19 @@ def analyze_market(asset, timeframe, expiry):
 
     if up:
         direction = "UP ↑"
-        explanation = "Индикаторы показывают согласованность в пользу роста."
+        explanation = (
+            "Индикаторы показывают согласованность в пользу роста."
+        )
     elif down:
         direction = "DOWN ↓"
-        explanation = "Индикаторы показывают согласованность в пользу снижения."
+        explanation = (
+            "Индикаторы показывают согласованность в пользу снижения."
+        )
     else:
         direction = "NO TRADE"
-        explanation = "Индикаторы не дают достаточного согласованного подтверждения."
+        explanation = (
+            "Нет достаточного согласованного подтверждения."
+        )
 
     return (
         direction,
@@ -297,7 +374,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         "DANTEZ SIGNALS\n\nВыбери рынок:",
-        reply_markup=main_menu_keyboard()
+        reply_markup=main_menu_keyboard(),
     )
 
 
@@ -305,82 +382,107 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    action, value = query.data.split(":", 1)
+    try:
+        action, value = query.data.split(":", 1)
 
-    if action == "market":
-        context.user_data["market_key"] = value
-        context.user_data["market"] = MARKETS[value]
+        if action == "market":
+            if value not in MARKETS:
+                raise ValueError("Неизвестный рынок.")
 
-        assets = ASSETS.get(value, [])
+            context.user_data["market_key"] = value
+            context.user_data["market"] = MARKETS[value]
 
-        items = [
-            (str(i), asset)
-            for i, asset in enumerate(assets)
-        ]
+            assets = ASSETS.get(value, [])
 
-        items.append(("custom", "Ввести свой актив"))
+            items = [
+                (str(i), asset)
+                for i, asset in enumerate(assets)
+            ]
 
-        await query.edit_message_text(
-            f"Рынок: {MARKETS[value]}\n\nВыбери актив:",
-            reply_markup=keyboard(items, "asset")
-        )
-
-    elif action == "asset":
-        if value == "custom":
-            context.user_data["awaiting_asset"] = True
+            items.append(("custom", "Ввести свой актив"))
 
             await query.edit_message_text(
-                "Введи валютную пару.\n"
-                "Например: EUR/USD или GBP/JPY."
+                f"Рынок: {MARKETS[value]}\n\nВыбери актив:",
+                reply_markup=keyboard(items, "asset"),
             )
-            return
 
-        market_key = context.user_data["market_key"]
+        elif action == "asset":
+            market_key = context.user_data.get("market_key")
 
-        context.user_data["asset"] = ASSETS[market_key][int(value)]
+            if market_key not in MARKETS:
+                raise ValueError("Сначала выбери рынок через /start.")
 
-        await query.edit_message_text(
-            f"Актив: {context.user_data['asset']}\n\n"
-            "Выбери таймфрейм:",
-            reply_markup=timeframe_keyboard()
-        )
+            if value == "custom":
+                context.user_data["awaiting_asset"] = True
 
-    elif action == "time":
-        context.user_data["timeframe"] = value
+                await query.edit_message_text(
+                    "Введи валютную пару.\n"
+                    "Например: EUR/USD или GBP/JPY."
+                )
+                return
 
-        await query.edit_message_text(
-            "Выбери срок экспирации:",
-            reply_markup=keyboard(
-                [(x, x) for x in EXPIRIES],
-                "expiry"
-            )
-        )
+            assets = ASSETS.get(market_key, [])
 
-    elif action == "expiry":
-        context.user_data["expiry"] = value
+            if not value.isdigit() or int(value) >= len(assets):
+                raise ValueError("Неизвестный актив.")
 
-        await query.edit_message_text(
-            "Настройки сохранены.\n\n"
-            f"Рынок: {context.user_data['market']}\n"
-            f"Актив: {context.user_data['asset']}\n"
-            f"Таймфрейм: {context.user_data['timeframe']}\n"
-            f"Экспирация: {value}\n\n"
-            "Нажми кнопку для анализа.",
-            reply_markup=action_keyboard()
-        )
+            context.user_data["asset"] = assets[int(value)]
 
-    elif action == "action":
-        if value == "back":
             await query.edit_message_text(
-                "Выбери рынок:",
-                reply_markup=main_menu_keyboard()
+                f"Актив: {context.user_data['asset']}\n\n"
+                "Выбери таймфрейм:",
+                reply_markup=timeframe_keyboard(),
             )
-            return
 
-        await run_analysis(query, context)
+        elif action == "time":
+            if value not in TIMEFRAMES:
+                raise ValueError("Неизвестный таймфрейм.")
+
+            context.user_data["timeframe"] = value
+
+            await query.edit_message_text(
+                "Выбери срок экспирации:",
+                reply_markup=keyboard(
+                    [(item, item) for item in EXPIRIES],
+                    "expiry",
+                ),
+            )
+
+        elif action == "expiry":
+            if value not in EXPIRIES:
+                raise ValueError("Неизвестная экспирация.")
+
+            context.user_data["expiry"] = value
+
+            await query.edit_message_text(
+                "Настройки сохранены.\n\n"
+                f"Рынок: {context.user_data.get('market')}\n"
+                f"Актив: {context.user_data.get('asset')}\n"
+                f"Таймфрейм: {context.user_data.get('timeframe')}\n"
+                f"Экспирация: {value}\n\n"
+                "Нажми кнопку для анализа.",
+                reply_markup=action_keyboard(),
+            )
+
+        elif action == "action":
+            if value == "back":
+                await query.edit_message_text(
+                    "Выбери рынок:",
+                    reply_markup=main_menu_keyboard(),
+                )
+                return
+
+            if value == "analyze":
+                await run_analysis(query, context)
+
+    except ValueError as error:
+        await query.message.reply_text(str(error))
 
 
-async def custom_asset(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def custom_asset(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
     if not context.user_data.get("awaiting_asset"):
         return
 
@@ -401,17 +503,17 @@ async def custom_asset(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"Выбран актив: {asset}\n\n"
         "Выбери таймфрейм:",
-        reply_markup=timeframe_keyboard()
+        reply_markup=timeframe_keyboard(),
     )
 
 
-async def run_analysis(query, context):
+async def run_analysis(source, context):
     market = context.user_data.get("market_key")
 
     if market != "forex":
-        await query.message.reply_text(
-            "Для этого рынка источник котировок пока не подключён.\n"
-            "Чтобы не выдавать ложные сигналы, анализ отменён."
+        await source.message.reply_text(
+            "Источник котировок для этого рынка пока не подключён.\n"
+            "Анализ отменён, чтобы не выдавать ложные сигналы."
         )
         return
 
@@ -420,12 +522,12 @@ async def run_analysis(query, context):
     expiry = context.user_data.get("expiry")
 
     if not all([asset, timeframe, expiry]):
-        await query.message.reply_text(
+        await source.message.reply_text(
             "Сначала выбери актив, таймфрейм и экспирацию через /start."
         )
         return
 
-    await query.message.reply_text(
+    await source.message.reply_text(
         "Получаю котировки и анализирую закрытые свечи..."
     )
 
@@ -434,7 +536,7 @@ async def run_analysis(query, context):
             analyze_market,
             asset,
             timeframe,
-            expiry
+            expiry,
         )
 
         (
@@ -454,7 +556,7 @@ async def run_analysis(query, context):
         message = (
             "DANTEZ SIGNALS\n\n"
             f"Актив: {asset}\n"
-            f"Рынок: Forex\n"
+            "Рынок: Forex\n"
             f"Таймфрейм: {timeframe}\n\n"
             f"Результат: {direction}\n"
             f"{explanation}\n\n"
@@ -471,20 +573,19 @@ async def run_analysis(query, context):
             "Результат анализа не гарантирует исход сделки."
         )
 
-        await query.message.reply_text(message)
+        await source.message.reply_text(message)
 
     except requests.RequestException:
         logging.exception("Market API error")
 
-        await query.message.reply_text(
-            "Не удалось получить данные рынка. "
-            "Попробуй позже."
+        await source.message.reply_text(
+            "Не удалось получить данные рынка. Попробуй позже."
         )
 
     except (ValueError, KeyError, TypeError):
         logging.exception("Analysis error")
 
-        await query.message.reply_text(
+        await source.message.reply_text(
             "Анализ отменён: данные устарели, неполные "
             "или имеют неверный формат."
         )
@@ -492,22 +593,22 @@ async def run_analysis(query, context):
     except Exception:
         logging.exception("Unexpected error")
 
-        await query.message.reply_text(
+        await source.message.reply_text(
             "Произошла внутренняя ошибка анализа."
         )
 
 
-async def analyze_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def analyze_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
     if not context.user_data.get("asset"):
         await update.message.reply_text(
             "Сначала настрой актив через /start."
         )
         return
 
-    class MessageQuery:
-        message = update.message
-
-    await run_analysis(MessageQuery(), context)
+    await run_analysis(update, context)
 
 
 async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -518,7 +619,10 @@ async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def help_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
     await update.message.reply_text(
         "/start — выбор рынка и актива\n"
         "/analyze — провести анализ\n"
@@ -529,7 +633,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     if not TOKEN:
-        raise RuntimeError("Не задан BOT_TOKEN")
+        raise RuntimeError("Не задан BOT_TOKEN.")
 
     app = Application.builder().token(TOKEN).build()
 
@@ -537,9 +641,14 @@ def main():
     app.add_handler(CommandHandler("stop", stop))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("analyze", analyze_command))
+
     app.add_handler(CallbackQueryHandler(menu))
+
     app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, custom_asset)
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            custom_asset,
+        )
     )
 
     print("DANTEZ SIGNALS запущен")
@@ -549,3 +658,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
