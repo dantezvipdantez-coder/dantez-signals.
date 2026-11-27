@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#090a12">
+<title>DANTEZ SIGNALS — Terminal</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{color-scheme:dark;--bg:#090a12;--panel:#111321;--panel2:#171a2b;--line:#292d43;--muted:#858ba6;--white:#f4f3fb;--pink:#f05bb8;--violet:#9875ff;--green:#42d6a0}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 80% -10%,#30204c 0,transparent 42%),var(--bg);color:var(--white);font:15px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:18px 16px 34px}
+.wrap{max-width:520px;margin:auto}.top{display:flex;align-items:center;justify-content:space-between;margin:8px 0 22px}.brand{font-weight:900;letter-spacing:2px;font-size:18px}.brand span{color:var(--pink)}.live{font-size:10px;color:var(--green);letter-spacing:1.5px;border:1px solid #245744;border-radius:20px;padding:6px 9px}
+.hero{padding:22px 20px;border:1px solid #38304e;border-radius:20px;background:linear-gradient(135deg,#1d1930,#111321 70%);position:relative;overflow:hidden}.hero:after{content:"";position:absolute;width:170px;height:170px;border:1px solid #6d4ca355;border-radius:50%;right:-65px;top:-75px;box-shadow:0 0 0 18px #6d4ca311,0 0 0 38px #6d4ca30a}.eyebrow{color:#b9a7eb;font-size:10px;letter-spacing:2px}.hero h1{font-size:26px;line-height:1.1;margin:9px 0}.hero p{color:#a5a1b8;font-size:12px;margin:0}.section{margin-top:22px}.section-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.section-head b{font-size:12px;letter-spacing:1.4px}.hint{font-size:10px;color:var(--muted)}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:9px}.choice{border:1px solid var(--line);border-radius:13px;background:var(--panel);padding:13px 12px;color:#d9d8e6;text-align:left;font-size:13px;min-height:48px}.choice small{display:block;color:var(--muted);font-size:10px;margin-top:3px}.choice.active{border-color:var(--violet);background:linear-gradient(135deg,#29213f,#17182a);box-shadow:inset 0 0 0 1px #9875ff33}.selects{display:grid;grid-template-columns:1fr 1fr;gap:9px}.field{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:11px}.field label{display:block;color:var(--muted);font-size:10px;letter-spacing:1px;margin-bottom:6px}.field select{width:100%;background:transparent;border:0;color:var(--white);font-size:14px;outline:none}.field option{background:#171a2b}
+.chart{height:145px;border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,#121525,#0d101b);overflow:hidden;position:relative;padding:10px}.chart svg{width:100%;height:100%}.chart-label{position:absolute;left:13px;top:11px;color:#9b9db2;font-size:10px;letter-spacing:1px}
+.analyze{width:100%;border:0;border-radius:14px;margin-top:22px;padding:16px;color:#fff;font-size:14px;font-weight:800;letter-spacing:1px;background:linear-gradient(100deg,#8057e9,#d34eae);box-shadow:0 8px 24px #a44cba33}.notice{font-size:10px;color:#777e98;text-align:center;margin:12px 8px 0}.foot{text-align:center;color:#666d84;font-size:10px;letter-spacing:1px;margin-top:25px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="top"><div class="brand">DANTEZ <span>SIGNALS</span></div><div class="live">● TERMINAL</div></header>
+<section class="hero"><div class="eyebrow">PREMIUM MARKET TERMINAL</div><h1>Торговый<br>интерфейс</h1><p>Выбери параметры рынка для анализа.</p></section>
+<section class="section"><div class="section-head"><b>01 / ВЫБОР РЫНКА</b><span class="hint">MARKET</span></div>
+<div class="grid" id="markets">
+<button class="choice active" data-market="forex">FOREX<small>Валютные пары</small></button>
+<button class="choice" data-market="otc">OTC<small>Внебиржевой рынок</small></button>
+<button class="choice" data-market="crypto">CRYPTO<small>Цифровые активы</small></button>
+<button class="choice" data-market="crypto_idx">CRYPTO IDX<small>Индексы крипторынка</small></button>
+</div></section>
+<section class="section"><div class="section-head"><b>02 / ИНСТРУМЕНТ</b><span class="hint">ASSET</span></div>
+<div class="field"><label>ТОРГОВАЯ ПАРА</label><select id="asset"><option>EUR/USD</option><option>GBP/USD</option><option>USD/JPY</option><option>AUD/USD</option><option>USD/CAD</option><option>EUR/JPY</option></select></div></section>
+<section class="section"><div class="section-head"><b>03 / ПАРАМЕТРЫ</b><span class="hint">SETTINGS</span></div>
+<div class="selects"><div class="field"><label>ТАЙМФРЕЙМ</label><select id="timeframe"><option>M1</option><option>M5</option><option>M15</option></select></div><div class="field"><label>ЭКСПИРАЦИЯ</label><select id="expiry"><option>1 минута</option><option>2 минуты</option><option>3 минуты</option><option>5 минут</option></select></div></div></section>
+<section class="section"><div class="section-head"><b>04 / ГРАФИК</b><span class="hint">MARKET VIEW</span></div><div class="chart"><div class="chart-label">LIVE CHART — ПОДКЛЮЧЕНИЕ ОЖИДАЕТСЯ</div><svg viewBox="0 0 420 130" preserveAspectRatio="none" aria-hidden="true"><g stroke="#252a3e" stroke-width="1"><path d="M0 30H420M0 65H420M0 100H420"/><path d="M70 0V130M140 0V130M210 0V130M280 0V130M350 0V130"/></g><path d="M0 100 C25 95 30 80 55 88 S85 70 105 78 S130 45 155 58 S185 82 205 68 S235 45 255 54 S285 30 305 42 S335 65 355 47 S390 32 420 20" fill="none" stroke="#9875ff" stroke-width="2.5"/><path d="M0 100 C25 95 30 80 55 88 S85 70 105 78 S130 45 155 58 S185 82 205 68 S235 45 255 54 S285 30 305 42 S335 65 355 47 S390 32 420 20 L420 130 L0 130Z" fill="#9875ff" opacity=".08"/></svg></div></section>
+<button class="analyze" id="analyze">ЗАПРОСИТЬ АНАЛИЗ</button><p class="notice">График и котировки появятся после подключения серверного API. Интерфейс не генерирует фиктивные рыночные данные.</p>
+<div class="foot">DANTEZ SIGNALS · PREMIUM TERMINAL</div>
+</div>
+<script>
+(function(){
+ const tg=window.Telegram&&window.Telegram.WebApp;if(tg){tg.ready();tg.expand();try{tg.setHeaderColor('#090a12');tg.setBackgroundColor('#090a12')}catch(e){}}
+ const lists={forex:['EUR/USD','GBP/USD','USD/JPY','AUD/USD','USD/CAD','EUR/JPY'],otc:['EUR/USD OTC','GBP/USD OTC','USD/JPY OTC','AUD/USD OTC','EUR/JPY OTC'],crypto:['BTC/USDT','ETH/USDT','BNB/USDT','SOL/USDT','XRP/USDT'],crypto_idx:['BTC/USDT','ETH/USDT']};
+ let market='forex';const asset=document.getElementById('asset');
+ document.querySelectorAll('[data-market]').forEach(btn=>btn.addEventListener('click',()=>{market=btn.dataset.market;document.querySelectorAll('[data-market]').forEach(x=>x.classList.toggle('active',x===btn));asset.innerHTML='';(lists[market]||['Выбери актив']).forEach(a=>{const o=document.createElement('option');o.textContent=a;asset.appendChild(o)});}));
+ document.getElementById('analyze').addEventListener('click',()=>{const message='Mini App: '+market+' / '+asset.value+' / '+document.getElementById('timeframe').value+' / '+document.getElementById('expiry').value;if(tg&&tg.showAlert)tg.showAlert('Интерфейс создан. Серверный анализатор ещё подключается.');else alert('Интерфейс создан. Серверный анализатор ещё подключается.');});
+})();
+</script>
+</body></html>
